@@ -60,15 +60,15 @@ public class ExaminationService
     // ------------------------------------------------------------------ lookups
     public async Task<LookupsDto> GetLookupsAsync(int branchId)
     {
-        var services = await _db.Services.OrderBy(s => s.Name).Select(s => new ServiceLookup(s.Id, s.Name, s.Price, s.GroupId, s.ServiceGroup!.Name)).ToListAsync();
+        var services = await _db.Services.OrderBy(s => s.Name).Select(s => new ServiceLookup(s.Id, s.Name, s.Price, s.GroupId, s.Group!.Name)).ToListAsync();
         var drugs = await _db.Drugs.OrderBy(d => d.Name).Select(d => new DrugLookup(d.Id, d.Name, d.Unit, d.Price, d.OutPrice)).ToListAsync();
         var equipment = await _db.Equipments.Where(e => e.IsVarious).OrderBy(e => e.Name)
             .Select(e => new EquipmentLookup(e.Id, e.Name, e.Serial, e.Unit, e.Vendor, e.Position, e.Usage, e.Note,
                 e.EquimentInBranches.Where(x => branchId == 0 || x.BranchId == branchId).Sum(x => (int?)x.Quantity) ?? 0)).ToListAsync();
         var laboTypes = await _db.LaboTypes.OrderBy(l => l.Name).Select(l => new IdName(l.Id, l.Name)).ToListAsync();
         var laboVendors = await _db.LaboVendors.OrderBy(l => l.Name).Select(l => new IdName(l.Id, l.Name)).ToListAsync();
-        var doctors = await _db.Doctors.Where(d => d.Employee!.IsValid).OrderBy(d => d.Employee!.FullName).Select(d => new EmployeeLookup(d.UserName, d.Employee!.FullName)).ToListAsync();
-        var assistants = await _db.Assistants.Where(d => d.Employee!.IsValid).OrderBy(d => d.Employee!.FullName).Select(d => new EmployeeLookup(d.UserName, d.Employee!.FullName)).ToListAsync();
+        var doctors = await _db.Doctors.Where(d => d.User!.IsValid).OrderBy(d => d.User!.FullName).Select(d => new EmployeeLookup(d.UserName, d.User!.FullName)).ToListAsync();
+        var assistants = await _db.Assistants.Where(d => d.User!.IsValid).OrderBy(d => d.User!.FullName).Select(d => new EmployeeLookup(d.UserName, d.User!.FullName)).ToListAsync();
         return new LookupsDto(services, drugs, equipment, laboTypes, laboVendors, doctors, assistants);
     }
 
@@ -82,7 +82,7 @@ public class ExaminationService
             .Select(a => new
             {
                 a.PrescriptionId, a.No, a.CreatedDate, a.DoctorName,
-                DoctorFullName = a.Doctor != null ? a.Doctor.Employee!.FullName : null,
+                DoctorFullName = a.Doctor != null ? a.Doctor.User!.FullName : null,
                 Customer = a.Prescription!.Customer!,
             }).ToListAsync();
         return rows.Select(r => new InProgressItem(r.PrescriptionId, r.No, r.CreatedDate, r.Customer.Id, r.Customer.Name,
@@ -160,9 +160,8 @@ public class ExaminationService
         _db.ContainedTreatments.RemoveRange(treatments);
         if (removeConsulting)
         {
-            var cons = await _db.ContainedConsultings.Include(c => c.ContainedConsultingLabos).Where(c => c.PrescriptionId == prescriptionId).ToListAsync();
-            foreach (var c in cons) _db.ContainedConsultingLabos.RemoveRange(c.ContainedConsultingLabos);
-            _db.ContainedConsultings.RemoveRange(cons);
+            _db.ContainedConsultingLabos.RemoveRange(_db.ContainedConsultingLabos.Where(l => l.PrescriptionId == prescriptionId));
+            _db.ContainedConsultings.RemoveRange(_db.ContainedConsultings.Where(c => c.PrescriptionId == prescriptionId));
         }
     }
 
@@ -194,11 +193,10 @@ public class ExaminationService
         var elder = all.Where(t => t.AppointmentNo < no).Select(ToDto).ToList();
         var previousDebt = current.Count > 0 ? current[0].PreviousDebt : await PrescriptionRemainAsync(prescriptionId);
 
-        var consultings = await _db.ContainedConsultings.Include(c => c.ContainedConsultingLabos)
-            .Where(c => c.PrescriptionId == prescriptionId).OrderBy(c => c.SubId)
-            .ToListAsync();
+        var consultings = await _db.ContainedConsultings.Where(c => c.PrescriptionId == prescriptionId).OrderBy(c => c.SubId).ToListAsync();
+        var consultingLabos = await _db.ContainedConsultingLabos.Where(l => l.PrescriptionId == prescriptionId).ToListAsync();
         var consultingDtos = consultings.Select(c => new ConsultingDto(c.SubId, c.ServiceId, c.OriginalPrice, c.Price, c.CreatedDate, c.Comment, c.zQuantity, c.ToothPositions,
-            ToLabo(c.ContainedConsultingLabos.FirstOrDefault()))).ToList();
+            ToLabo(consultingLabos.FirstOrDefault(l => l.SubId == c.SubId)))).ToList();
 
         var receipts = await _db.ContainedReceipts.Where(r => r.PrescriptionId == prescriptionId && r.AppointmentNo == no)
             .Select(r => new ReceiptDto(r.DrugId, r.Amount, r.Instruction, r.PerDay, r.PerTimes)).ToListAsync();
@@ -322,9 +320,8 @@ public class ExaminationService
         _db.ContainedTreatments.RemoveRange(oldTreatments);
         if (no == 1)
         {
-            var oldCons = await _db.ContainedConsultings.Include(c => c.ContainedConsultingLabos).Where(c => c.PrescriptionId == prescriptionId).ToListAsync();
-            foreach (var c in oldCons) _db.ContainedConsultingLabos.RemoveRange(c.ContainedConsultingLabos);
-            _db.ContainedConsultings.RemoveRange(oldCons);
+            _db.ContainedConsultingLabos.RemoveRange(_db.ContainedConsultingLabos.Where(l => l.PrescriptionId == prescriptionId));
+            _db.ContainedConsultings.RemoveRange(_db.ContainedConsultings.Where(c => c.PrescriptionId == prescriptionId));
         }
         await RemoveUsedEquipmentAsync(prescriptionId, no, customer.BranchId);
         await _db.SaveChangesAsync();
@@ -416,13 +413,9 @@ public class ExaminationService
             var expense = new Expense { AccountantName = _user.UserName, CreatedDate = DateTime.Now };
             _db.Expenses.Add(expense);
             await _db.SaveChangesAsync();
-            _db.ContainedExpenses.Add(new ContainedExpense
-            {
-                ExpenseId = expense.Id, Amount = -lastRemain,
-                Description = ("Trả tiền dư khách hàng " + customer.Name + " Mã khách hàng: " + customer.Id + ", Ngày: " + DateTime.Now).Length > 150
-                    ? ("Trả tiền dư KH " + customer.Name + " (" + customer.Id + ")")[..Math.Min(150, ("Trả tiền dư KH " + customer.Name + " (" + customer.Id + ")").Length)]
-                    : "Trả tiền dư khách hàng " + customer.Name + " Mã khách hàng: " + customer.Id + ", Ngày: " + DateTime.Now,
-            });
+            var description = "Trả tiền dư khách hàng " + customer.Name + " Mã khách hàng: " + customer.Id + ", Ngày: " + DateTime.Now.ToString("dd/MM/yyyy HH:mm");
+            if (description.Length > 150) description = description[..150];
+            _db.ContainedExpenses.Add(new ContainedExpense { ExpenseId = expense.Id, Amount = -lastRemain, Description = description });
         }
 
         // ---- consulting (tư vấn) – only editable on the first appointment ----
@@ -439,16 +432,16 @@ public class ExaminationService
                     CreatedDate = c.CreatedDate == default ? DateTime.Today : c.CreatedDate, Comment = c.Comment,
                     zQuantity = qtyFromTeeth > 0 ? qtyFromTeeth : c.Quantity, ToothPositions = positions,
                 };
+                _db.ContainedConsultings.Add(cc);
                 if (c.Labo is { LaboVendorId: not null, LaboTypeId: not null })
                 {
-                    cc.ContainedConsultingLabos.Add(new ContainedConsultingLabo
+                    _db.ContainedConsultingLabos.Add(new ContainedConsultingLabo
                     {
                         PrescriptionId = prescriptionId, SubId = cSub, LaboVendorId = c.Labo.LaboVendorId.Value, LaboTypeId = c.Labo.LaboTypeId.Value,
                         Color = c.Labo.Color, ReceiverDate = c.Labo.ReceiverDate ?? DateTime.Today, DeliverDate = c.Labo.DeliverDate ?? DateTime.Today,
                         Delivered = c.Labo.Delivered, Price = c.Labo.Price,
                     });
                 }
-                _db.ContainedConsultings.Add(cc);
             }
         }
 
@@ -456,6 +449,7 @@ public class ExaminationService
         foreach (var u in (req.UsedEquipments ?? new List<UsedEquipmentDto>()).Where(u => u.Quantity > 0).GroupBy(u => u.EquipmentId))
         {
             var qty = u.Sum(x => x.Quantity);
+            if (!await _db.Equipments.AnyAsync(e => e.Id == u.Key)) throw new ApiException("Một số vật tư không có trong CSDL.");
             var stock = await _db.EquimentInBranches.FindAsync(customer.BranchId, u.Key);
             if (stock is null)
             {

@@ -25,13 +25,16 @@ public class DrugStockController : ControllerBase
     private IQueryable<DrugStockDto> Query(int scope, string? keyword, bool onlyExisting)
     {
         var drugs = _db.Drugs.WhereUnaccentLike(d => d.Name, keyword);
-        var q = scope == 0
-            ? drugs.Select(d => new DrugStockDto(d.Id, d.Name, d.Unit, d.Price, d.OutPrice, d.Description, 0,
-                _db.DrugInBranches.Where(s => s.DrugId == d.Id).Sum(s => (int?)s.Quantity) ?? 0))
-            : drugs.Select(d => new DrugStockDto(d.Id, d.Name, d.Unit, d.Price, d.OutPrice, d.Description, scope,
-                _db.DrugInBranches.Where(s => s.DrugId == d.Id && s.BranchId == scope).Sum(s => (int?)s.Quantity) ?? 0));
+        var q = drugs.Select(d => new
+        {
+            Drug = d,
+            Quantity = scope == 0
+                ? (_db.DrugInBranches.Where(s => s.DrugId == d.Id).Sum(s => (int?)s.Quantity) ?? 0)
+                : (_db.DrugInBranches.Where(s => s.DrugId == d.Id && s.BranchId == scope).Sum(s => (int?)s.Quantity) ?? 0),
+        });
         if (onlyExisting) q = q.Where(x => x.Quantity > 0);
-        return q;
+        return q.OrderBy(x => x.Drug.Name)
+            .Select(x => new DrugStockDto(x.Drug.Id, x.Drug.Name, x.Drug.Unit, x.Drug.Price, x.Drug.OutPrice, x.Drug.Description, scope, x.Quantity));
     }
 
     /// <summary>Stock per drug for the selected branch (0 = sum of all branches, admin only).</summary>
@@ -39,7 +42,7 @@ public class DrugStockController : ControllerBase
     public async Task<List<DrugStockDto>> List(int? branchId, string? keyword, bool onlyExisting = false, int limit = 500)
     {
         var scope = BranchScope.Resolve(_user, branchId);
-        return await Query(scope, keyword, onlyExisting).OrderBy(x => x.Name).Take(Math.Clamp(limit, 1, 5000)).ToListAsync();
+        return await Query(scope, keyword, onlyExisting).Take(Math.Clamp(limit, 1, 5000)).ToListAsync();
     }
 
     /// <summary>Set the stock quantity of a drug in a branch (manual adjustment).</summary>
@@ -60,7 +63,7 @@ public class DrugStockController : ControllerBase
     public async Task<IActionResult> Export(int? branchId, string? keyword, bool onlyExisting = false)
     {
         var scope = BranchScope.Resolve(_user, branchId);
-        var rows = await Query(scope, keyword, onlyExisting).OrderBy(x => x.Name).ToListAsync();
+        var rows = await Query(scope, keyword, onlyExisting).ToListAsync();
         var bytes = ExcelExporter.Build("Ton kho thuoc", rows, new ExcelExporter.Column<DrugStockDto>[]
         {
             new("Thuốc", r => r.Name),

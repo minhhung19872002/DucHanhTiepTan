@@ -32,13 +32,16 @@ public class EquipmentStockController : ControllerBase
             "usage" => q.WhereUnaccentLike(e => e.Usage, keyword),
             _ => q.WhereUnaccentLike(e => e.Name, keyword),
         };
-        var projected = scope == 0
-            ? q.Select(e => new EquipmentStockDto(e.Id, e.Name, e.Serial, e.Unit, e.Price, e.IsVarious, e.IsVarious ? "Hao mòn" : "Cố định", e.Vendor,
-                e.Position, e.Usage, e.Note, 0, _db.EquimentInBranches.Where(s => s.EquipmentId == e.Id).Sum(s => (int?)s.Quantity) ?? 0))
-            : q.Select(e => new EquipmentStockDto(e.Id, e.Name, e.Serial, e.Unit, e.Price, e.IsVarious, e.IsVarious ? "Hao mòn" : "Cố định", e.Vendor,
-                e.Position, e.Usage, e.Note, scope, _db.EquimentInBranches.Where(s => s.EquipmentId == e.Id && s.BranchId == scope).Sum(s => (int?)s.Quantity) ?? 0));
+        var projected = q.Select(e => new
+        {
+            E = e,
+            Quantity = scope == 0
+                ? (_db.EquimentInBranches.Where(s => s.EquipmentId == e.Id).Sum(s => (int?)s.Quantity) ?? 0)
+                : (_db.EquimentInBranches.Where(s => s.EquipmentId == e.Id && s.BranchId == scope).Sum(s => (int?)s.Quantity) ?? 0),
+        });
         if (onlyExisting) projected = projected.Where(x => x.Quantity > 0);
-        return projected;
+        return projected.OrderBy(x => x.E.Name).Select(x => new EquipmentStockDto(x.E.Id, x.E.Name, x.E.Serial, x.E.Unit, x.E.Price, x.E.IsVarious,
+            x.E.IsVarious ? "Hao mòn" : "Cố định", x.E.Vendor, x.E.Position, x.E.Usage, x.E.Note, scope, x.Quantity));
     }
 
     /// <summary>
@@ -49,7 +52,7 @@ public class EquipmentStockController : ControllerBase
     public async Task<List<EquipmentStockDto>> List(int? branchId, bool? isVarious, string? keyword, string searchBy = "name", bool onlyExisting = true, int limit = 500)
     {
         var scope = BranchScope.Resolve(_user, branchId);
-        return await Query(scope, isVarious, keyword, searchBy, onlyExisting).OrderBy(x => x.Name).Take(Math.Clamp(limit, 1, 5000)).ToListAsync();
+        return await Query(scope, isVarious, keyword, searchBy, onlyExisting).Take(Math.Clamp(limit, 1, 5000)).ToListAsync();
     }
 
     /// <summary>Set the stock quantity of an equipment in a branch (legacy inline edit of the Quantity column).</summary>
@@ -71,7 +74,7 @@ public class EquipmentStockController : ControllerBase
     public async Task<IActionResult> Export(int? branchId, bool? isVarious, string? keyword, string searchBy = "name", bool onlyExisting = true)
     {
         var scope = BranchScope.Resolve(_user, branchId);
-        var rows = await Query(scope, isVarious, keyword, searchBy, onlyExisting).OrderBy(x => x.Name).ToListAsync();
+        var rows = await Query(scope, isVarious, keyword, searchBy, onlyExisting).ToListAsync();
         var bytes = ExcelExporter.Build("Ton kho thiet bi", rows, new ExcelExporter.Column<EquipmentStockDto>[]
         {
             new("Tên", r => r.Name),

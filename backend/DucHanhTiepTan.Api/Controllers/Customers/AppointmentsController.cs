@@ -235,7 +235,7 @@ public class AppointmentsController : ControllerBase
                 a.Prescription.Customer.Sex, a.Prescription.Customer.BirthYear, a.Prescription.Customer.Phone,
                 a.Prescription.Customer.Address, a.Prescription.Customer.WardName, a.Prescription.Customer.DistrictName, a.Prescription.Customer.ProvinceName,
                 CustomerCreated = a.Prescription.Customer.CreatedDate,
-                DoctorFullName = a.Doctor != null && a.Doctor.Employee != null ? a.Doctor.Employee.FullName : null,
+                DoctorFullName = _db.Employees.Where(e => e.UserName == a.DoctorName).Select(e => e.FullName).FirstOrDefault(),
                 Treatments = a.ContainedTreatments.OrderBy(t => t.SubId).Select(t => new
                 {
                     t.SubId, t.IsCancelled, t.zQuantity, t.Price, t.OriginalPrice, t.Paid, t.Comment, ServiceName = t.Service!.Name,
