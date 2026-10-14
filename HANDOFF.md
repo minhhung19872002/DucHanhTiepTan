@@ -1,26 +1,17 @@
-# Handoff – trạng thái công việc (2026-10-14)
+# Trạng thái dự án (2026-10-14)
 
-## Mục tiêu
-Clone phần mềm nha khoa Đức Hạnh (WinForms `C:\Users\ADMIN\Downloads\test\test\MainApp.exe`) thành web app:
-**ASP.NET Core 9 API + PostgreSQL + React (Vite/TS/AntD) + Docker**. Không đụng tới phần mềm và DB SQL Server đang chạy.
-Repo: https://github.com/minhhung19872002/DucHanhTiepTan (nhánh `main`).
+Clone web của phần mềm nha khoa Đức Hạnh (WinForms `MainApp.exe`) đã hoàn tất phiên bản đầu:
+**ASP.NET Core 9 API + PostgreSQL 16 + React (Vite/TS/AntD) + Docker Compose**. Không đụng tới phần mềm và DB SQL Server đang chạy.
 
-## Đã xong (đã push)
-- Decompile app gốc (ilspycmd) → mã C# ở scratchpad:
-  `C:\Users\ADMIN\AppData\Local\Temp\claude\D--Source-DucHanhTiepTan\9f40bbe8-e5dc-4a76-a8e4-935b546e3166\scratchpad\decomp\main\Tmt.PharmacyRibbon\*.cs`
-  (nếu mất, chạy lại: `ilspycmd -p -o main MainApp.exe`).
-- Backend skeleton build OK: entities + DbContext sinh từ schema (`tools/gen_entities.py`), migration InitialCreate, views (`Sql/views.sql`), seed (`db/seed/`), JWT auth (MD5 cũ), `BranchScope`, `ExcelExporter`, `BranchesController` mẫu.
-- Frontend skeleton build OK: login, layout menu theo ribbon gốc, `routes.tsx` đã đăng ký đủ 37 trang (placeholder).
-- Postgres đang chạy: container `duchanh_db`, cổng 5491, đã nạp seed; tài khoản demo `admin`/`123456`, `tieptan01`/`123456`.
-- Quy ước: `CONVENTIONS.md`. Chạy: xem `README.md`.
+## Đã xong
+- Backend 6 module (khách hàng/lịch hẹn, khám bệnh, thu chi/labo/VIP, danh mục, kho, báo cáo/lương): build sạch, 34 endpoint GET đã gọi thử với dữ liệu thật.
+- Frontend: 37 trang, `tsc -b` + `vite build` sạch; đã duyệt cả 39 route trong trình duyệt qua Docker (cổng 3091), không có lỗi console.
+- Phân quyền: tiếp tân bị chặn báo cáo/lương/tài khoản; chỉ thấy dữ liệu chi nhánh của mình.
+- Xuất Excel cho các báo cáo; in phiếu khám bằng layout in của trình duyệt.
 
-## Đang dở – 6 agent port module đang chạy song song khi tạm dừng
-Mỗi agent tự tạo file trong `backend/.../Controllers/<Module>/` và `frontend/src/modules/<module>/`:
-customers, examination, finance, catalog, inventory, reports. Có thể một số đã xong, một số dở.
-
-## Việc tiếp theo cho model mới
-1. `git status` để xem file mới; kiểm tra từng module còn trang nào là placeholder (`grep -rl "Placeholder" frontend/src/modules`).
-2. Build: `cd backend/DucHanhTiepTan.Api && dotnet build`; `cd frontend && npx tsc --noEmit && npm run build`. Sửa lỗi tích hợp (trùng tên DTO/route giữa module...).
-3. Chạy thử: `dotnet run` (5091) + `npm run dev` (5173), đăng nhập, bấm qua các màn hình; hoặc `docker compose up -d --build` (web 3091).
-4. Port nốt module nào còn thiếu theo `CONVENTIONS.md`.
-5. Commit + push lên `main` (attribution Co-Authored-By theo quy ước session).
+## Chưa kiểm thử kỹ / việc tiếp theo
+- Chưa bấm thử toàn bộ luồng ghi (tạo/sửa/xóa) trên giao diện; các agent chỉ thử qua API.
+- Chưa có luồng "trả nợ" riêng ngoài cột Thanh toán trong bảng điều trị (giống app gốc).
+- Báo cáo chưa đối chiếu số liệu với app gốc trên cùng bộ dữ liệu.
+- Seed chỉ là dump năm 2013 (chi nhánh Biên Hòa). Muốn dữ liệu thật: xem mục "Nạp dữ liệu thật" trong README.
+- Mật khẩu demo `123456` chỉ dành cho DB local; đổi `JWT_KEY` khi triển khai.
