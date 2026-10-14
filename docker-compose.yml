@@ -1,0 +1,46 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: duchanh_db
+    environment:
+      POSTGRES_DB: duchanh_tieptan
+      POSTGRES_USER: duchanh
+      POSTGRES_PASSWORD: duchanh_dev_pw
+      TZ: Asia/Ho_Chi_Minh
+    ports:
+      - "5491:5432"
+    volumes:
+      - duchanh_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U duchanh -d duchanh_tieptan"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build: ./backend/DucHanhTiepTan.Api
+    container_name: duchanh_api
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Default: "Host=db;Port=5432;Database=duchanh_tieptan;Username=duchanh;Password=duchanh_dev_pw"
+      Jwt__Key: "${JWT_KEY:-change-me-in-production-0123456789abcdef0123456789abcdef}"
+      Seed__Directory: /seed
+      Cors__Origins__0: http://localhost:3091
+    volumes:
+      - ./db/seed:/seed:ro
+    ports:
+      - "5091:8080"
+
+  web:
+    build: ./frontend
+    container_name: duchanh_web
+    depends_on:
+      - api
+    ports:
+      - "3091:80"
+
+volumes:
+  duchanh_pgdata:
